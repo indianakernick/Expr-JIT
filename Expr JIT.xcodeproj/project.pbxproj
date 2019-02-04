@@ -7,10 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		45C2A26E2208E40400E989C2 /* main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 45C2A26D2208E40400E989C2 /* main.cpp */; };
+		45C2A26E2208E40400E989C2 /* main.c in Sources */ = {isa = PBXBuildFile; fileRef = 45C2A26D2208E40400E989C2 /* main.c */; };
 		45C2A2732208E41800E989C2 /* libExpr JIT.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 45C2A2602208E3E100E989C2 /* libExpr JIT.a */; };
-		45C2A2772208E4B000E989C2 /* expr jit.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 45C2A2752208E4B000E989C2 /* expr jit.cpp */; };
-		45C2A2782208E4B000E989C2 /* expr jit.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 45C2A2762208E4B000E989C2 /* expr jit.hpp */; };
+		45C2A2772208E4B000E989C2 /* expr jit.c in Sources */ = {isa = PBXBuildFile; fileRef = 45C2A2752208E4B000E989C2 /* expr jit.c */; };
+		45C2A2782208E4B000E989C2 /* expr jit.h in Headers */ = {isa = PBXBuildFile; fileRef = 45C2A2762208E4B000E989C2 /* expr jit.h */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -38,9 +38,9 @@
 /* Begin PBXFileReference section */
 		45C2A2602208E3E100E989C2 /* libExpr JIT.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libExpr JIT.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		45C2A26B2208E40400E989C2 /* Test */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = Test; sourceTree = BUILT_PRODUCTS_DIR; };
-		45C2A26D2208E40400E989C2 /* main.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = main.cpp; sourceTree = "<group>"; };
-		45C2A2752208E4B000E989C2 /* expr jit.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = "expr jit.cpp"; sourceTree = "<group>"; };
-		45C2A2762208E4B000E989C2 /* expr jit.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = "expr jit.hpp"; sourceTree = "<group>"; };
+		45C2A26D2208E40400E989C2 /* main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = main.c; sourceTree = "<group>"; };
+		45C2A2752208E4B000E989C2 /* expr jit.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "expr jit.c"; sourceTree = "<group>"; };
+		45C2A2762208E4B000E989C2 /* expr jit.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "expr jit.h"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -84,7 +84,7 @@
 		45C2A26C2208E40400E989C2 /* Test */ = {
 			isa = PBXGroup;
 			children = (
-				45C2A26D2208E40400E989C2 /* main.cpp */,
+				45C2A26D2208E40400E989C2 /* main.c */,
 			);
 			path = Test;
 			sourceTree = "<group>";
@@ -99,8 +99,8 @@
 		45C2A2742208E42C00E989C2 /* src */ = {
 			isa = PBXGroup;
 			children = (
-				45C2A2752208E4B000E989C2 /* expr jit.cpp */,
-				45C2A2762208E4B000E989C2 /* expr jit.hpp */,
+				45C2A2752208E4B000E989C2 /* expr jit.c */,
+				45C2A2762208E4B000E989C2 /* expr jit.h */,
 			);
 			path = src;
 			sourceTree = "<group>";
@@ -112,7 +112,7 @@
 			isa = PBXHeadersBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				45C2A2782208E4B000E989C2 /* expr jit.hpp in Headers */,
+				45C2A2782208E4B000E989C2 /* expr jit.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -194,7 +194,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				45C2A2772208E4B000E989C2 /* expr jit.cpp in Sources */,
+				45C2A2772208E4B000E989C2 /* expr jit.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -202,7 +202,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				45C2A26E2208E40400E989C2 /* main.cpp in Sources */,
+				45C2A26E2208E40400E989C2 /* main.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -335,6 +335,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = QY44MADGVC;
 				EXECUTABLE_PREFIX = lib;
+				GCC_C_LANGUAGE_STANDARD = c99;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 			};
@@ -347,6 +348,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = QY44MADGVC;
 				EXECUTABLE_PREFIX = lib;
+				GCC_C_LANGUAGE_STANDARD = c99;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 			};
