@@ -32,9 +32,9 @@ typedef struct Variable {
 
 typedef struct ByteCode ByteCode;
 
-ByteCode *ejit_compile(const char *, Variable *, size_t);
-double ejit_eval(ByteCode *);
-void ejit_free(ByteCode *);
+ByteCode *ej_compile(const char *, Variable *, size_t);
+double ej_eval(ByteCode *);
+void ej_free(ByteCode *);
 
 #ifdef __cplusplus
 }
