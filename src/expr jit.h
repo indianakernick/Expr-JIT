@@ -29,7 +29,7 @@ enum {
 
 typedef struct ej_variable {
   const char *name;
-  double *addr;
+  void *addr;
   int type;
   void *ctx;
 } ej_variable;

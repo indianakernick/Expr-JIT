@@ -12,6 +12,7 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 enum {
   OP_neg = 0,
@@ -45,11 +46,90 @@ enum {
 
 struct ej_bytecode {
   uint64_t *ops;
+  size_t size;
+  size_t capacity;
 };
 
+static ej_bytecode *bc_alloc(const size_t cap) {
+  ej_bytecode *bc = malloc(sizeof(ej_bytecode));
+  bc->ops = malloc(sizeof(uint64_t) * cap);
+  bc->size = 0;
+  bc->capacity = cap;
+  return bc;
+}
+
+static void bc_reserve(ej_bytecode *bc, const size_t cap) {
+  assert(bc);
+  size_t newCap = bc->capacity;
+  while (newCap < cap) {
+    newCap *= 2;
+  }
+  if (newCap != bc->capacity) {
+    bc->capacity = newCap;
+    bc->ops = realloc(bc->ops, newCap);
+  }
+}
+
+static void bc_push_op(ej_bytecode *bc, const uint64_t op) {
+  assert(bc);
+  const size_t newSize = bc->size + 1;
+  bc_reserve(bc, newSize);
+  bc->ops[bc->size] = op;
+  bc->size = newSize;
+}
+
+static void bc_push_var(ej_bytecode *bc, double *var) {
+  bc_push_op(bc, OP_var);
+  bc_push_op(bc, *(uint64_t*)(&var));
+}
+
+static void bc_push_con(ej_bytecode *bc, double con) {
+  bc_push_op(bc, OP_con);
+  bc_push_op(bc, *(uint64_t*)(&con));
+}
+
+static void bc_push_fun(ej_bytecode *bc, void *addr, size_t arity) {
+  assert(arity < 8);
+  bc_push_op(bc, OP_fun0 + arity);
+  bc_push_op(bc, *(uint64_t*)(&addr));
+}
+
+static void bc_push_clo(ej_bytecode *bc, void *addr, size_t arity, void *ctx) {
+  assert(arity < 8);
+  bc_push_op(bc, OP_fun0 + arity);
+  bc_push_op(bc, *(uint64_t*)(&ctx));
+  bc_push_op(bc, *(uint64_t*)(&addr));
+}
+
+// ( 1/(a+1) + 2/(a+2) + 3/(a+3) )
+
 ej_bytecode *ej_compile(const char *str, ej_variable *vars, size_t len) {
-  assert(str);
-  return NULL;
+  ej_bytecode *bc = bc_alloc(32);
+  
+  bc_push_con(bc, 1);
+  bc_push_var(bc, (double*)vars[0].addr);
+  bc_push_con(bc, 1);
+  bc_push_op(bc, OP_add);
+  bc_push_op(bc, OP_div);
+  
+  bc_push_con(bc, 2);
+  bc_push_var(bc, (double*)vars[0].addr);
+  bc_push_con(bc, 2);
+  bc_push_op(bc, OP_add);
+  bc_push_op(bc, OP_div);
+  
+  bc_push_op(bc, OP_add);
+  
+  bc_push_con(bc, 3);
+  bc_push_var(bc, (double*)vars[0].addr);
+  bc_push_con(bc, 3);
+  bc_push_op(bc, OP_add);
+  bc_push_op(bc, OP_div);
+  
+  bc_push_op(bc, OP_add);
+  bc_push_op(bc, OP_ret);
+  
+  return bc;
 }
 
 #define CAST_FUN(...) ((double(*)(__VA_ARGS__))(++op))
