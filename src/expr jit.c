@@ -20,7 +20,6 @@ enum {
   OP_sub,
   OP_mul,
   OP_div,
-  OP_mod,
   OP_var,
   OP_con,
   OP_ret,
@@ -96,45 +95,69 @@ static void bc_push_fun(ej_bytecode *bc, void *addr, size_t arity) {
 
 static void bc_push_clo(ej_bytecode *bc, void *addr, size_t arity, void *ctx) {
   assert(arity < 8);
-  bc_push_op(bc, OP_fun0 + arity);
+  bc_push_op(bc, OP_clo0 + arity);
   bc_push_op(bc, *(uint64_t*)(&ctx));
   bc_push_op(bc, *(uint64_t*)(&addr));
 }
 
-// ( 1/(a+1) + 2/(a+2) + 3/(a+3) )
+static double calc(double a, double b) {
+  return a / (b + a);
+}
+
+static double calc_clo(double *ctx, double a) {
+  return a / (*ctx + a);
+}
 
 ej_bytecode *ej_compile(const char *str, ej_variable *vars, size_t len) {
-  ej_bytecode *bc = bc_alloc(32);
+  ej_bytecode *bc = bc_alloc(64);
+  
+  // ( 1/(a+1) + 2/(a+2) + 3/(a+3) )
   
   bc_push_con(bc, 1);
   bc_push_var(bc, (double*)vars[0].addr);
-  bc_push_con(bc, 1);
-  bc_push_op(bc, OP_add);
-  bc_push_op(bc, OP_div);
+  bc_push_fun(bc, &calc, 2);
   
   bc_push_con(bc, 2);
-  bc_push_var(bc, (double*)vars[0].addr);
-  bc_push_con(bc, 2);
-  bc_push_op(bc, OP_add);
-  bc_push_op(bc, OP_div);
+  bc_push_clo(bc, &calc_clo, 1, vars[0].addr);
   
   bc_push_op(bc, OP_add);
   
   bc_push_con(bc, 3);
   bc_push_var(bc, (double*)vars[0].addr);
-  bc_push_con(bc, 3);
-  bc_push_op(bc, OP_add);
-  bc_push_op(bc, OP_div);
+  bc_push_fun(bc, &calc, 2);
   
   bc_push_op(bc, OP_add);
   bc_push_op(bc, OP_ret);
   
+  /*bc_push_con(bc, 1);
+  bc_push_var(bc, (double*)vars[0].addr);
+  bc_push_con(bc, 1);
+  bc_push_op(bc, OP_add);
+  bc_push_op(bc, OP_div);
+  
+  bc_push_con(bc, 2);
+  bc_push_var(bc, (double*)vars[0].addr);
+  bc_push_con(bc, 2);
+  bc_push_op(bc, OP_add);
+  bc_push_op(bc, OP_div);
+  
+  bc_push_op(bc, OP_add);
+  
+  bc_push_con(bc, 3);
+  bc_push_var(bc, (double*)vars[0].addr);
+  bc_push_con(bc, 3);
+  bc_push_op(bc, OP_add);
+  bc_push_op(bc, OP_div);
+  
+  bc_push_op(bc, OP_add);
+  bc_push_op(bc, OP_ret);*/
+  
   return bc;
 }
 
-#define CAST_FUN(...) ((double(*)(__VA_ARGS__))(++op))
-#define CAST_CLO(...) ((double(*)(void *, __VA_ARGS__))(++op))
-#define CAST_CLO0()   ((double(*)(void *))(++op))
+#define CAST_FUN(...) (*(double(**)(__VA_ARGS__))(++op))
+#define CAST_CLO(...) (*(double(**)(void *, __VA_ARGS__))(++op))
+#define CAST_CLO0()   (*(double(**)(void *))(++op))
 #define CAST_CTX()    (*(void**)(++op))
 
 #define PUSH(VAL)                                                               \
@@ -178,11 +201,6 @@ double ej_eval(ej_bytecode *bc) {
         x = *top;
         *top = x / y;
         break;
-      case OP_mod:
-        y = POP();
-        x = *top;
-        *top = fmod(x, y);
-        break;
       case OP_var:
         ++op;
         PUSH(**(double**)op);
@@ -198,32 +216,39 @@ double ej_eval(ej_bytecode *bc) {
         PUSH(CAST_FUN(void)());
         break;
       case OP_fun1:
-        PUSH(CAST_FUN(double)(*top));
+        x = CAST_FUN(double)(*top);
         --top;
+        PUSH(x);
         break;
       case OP_fun2:
-        PUSH(CAST_FUN(double, double)(top[-1], top[0]));
+        x = CAST_FUN(double, double)(top[-1], top[0]);
         top -= 2;
+        PUSH(x);
         break;
       case OP_fun3:
-        PUSH(CAST_FUN(double, double, double)(top[-2], top[-1], top[0]));
+        x = CAST_FUN(double, double, double)(top[-2], top[-1], top[0]);
         top -= 3;
+        PUSH(x);
         break;
       case OP_fun4:
-        PUSH(CAST_FUN(double, double, double, double)(top[-3], top[-2], top[-1], top[0]));
+        x = CAST_FUN(double, double, double, double)(top[-3], top[-2], top[-1], top[0]);
         top -= 4;
+        PUSH(x);
         break;
       case OP_fun5:
-        PUSH(CAST_FUN(double, double, double, double, double)(top[-4], top[-3], top[-2], top[-1], top[0]));
+        x = CAST_FUN(double, double, double, double, double)(top[-4], top[-3], top[-2], top[-1], top[0]);
         top -= 5;
+        PUSH(x);
         break;
       case OP_fun6:
-        PUSH(CAST_FUN(double, double, double, double, double, double)(top[-5], top[-4], top[-3], top[-2], top[-1], top[0]));
+        x = CAST_FUN(double, double, double, double, double, double)(top[-5], top[-4], top[-3], top[-2], top[-1], top[0]);
         top -= 6;
+        PUSH(x);
         break;
       case OP_fun7:
-        PUSH(CAST_FUN(double, double, double, double, double, double, double)(top[-6], top[-5], top[-4], top[-3], top[-2], top[-1], top[0]));
+        x = CAST_FUN(double, double, double, double, double, double, double)(top[-6], top[-5], top[-4], top[-3], top[-2], top[-1], top[0]);
         top -= 7;
+        PUSH(x);
         break;
       
       case OP_clo0:
@@ -232,38 +257,45 @@ double ej_eval(ej_bytecode *bc) {
         break;
       case OP_clo1:
         ctx = CAST_CTX();
-        PUSH(CAST_CLO(double)(ctx, *top));
+        x = CAST_CLO(double)(ctx, *top);
         --top;
+        PUSH(x);
         break;
       case OP_clo2:
         ctx = CAST_CTX();
-        PUSH(CAST_CLO(double, double)(ctx, top[-1], top[0]));
+        x = CAST_CLO(double, double)(ctx, top[-1], top[0]);
         top -= 2;
+        PUSH(x);
         break;
       case OP_clo3:
         ctx = CAST_CTX();
-        PUSH(CAST_CLO(double, double, double)(ctx, top[-2], top[-1], top[0]));
+        x = CAST_CLO(double, double, double)(ctx, top[-2], top[-1], top[0]);
         top -= 3;
+        PUSH(x);
         break;
       case OP_clo4:
         ctx = CAST_CTX();
-        PUSH(CAST_CLO(double, double, double, double)(ctx, top[-3], top[-2], top[-1], top[0]));
+        x = CAST_CLO(double, double, double, double)(ctx, top[-3], top[-2], top[-1], top[0]);
         top -= 4;
+        PUSH(x);
         break;
       case OP_clo5:
         ctx = CAST_CTX();
-        PUSH(CAST_CLO(double, double, double, double, double)(ctx, top[-4], top[-3], top[-2], top[-1], top[0]));
+        x = CAST_CLO(double, double, double, double, double)(ctx, top[-4], top[-3], top[-2], top[-1], top[0]);
         top -= 5;
+        PUSH(x);
         break;
       case OP_clo6:
         ctx = CAST_CTX();
-        PUSH(CAST_CLO(double, double, double, double, double, double)(ctx, top[-5], top[-4], top[-3], top[-2], top[-1], top[0]));
+        x = CAST_CLO(double, double, double, double, double, double)(ctx, top[-5], top[-4], top[-3], top[-2], top[-1], top[0]);
         top -= 6;
+        PUSH(x);
         break;
       case OP_clo7:
         ctx = CAST_CTX();
-        PUSH(CAST_CLO(double, double, double, double, double, double, double)(ctx, top[-6], top[-5], top[-4], top[-3], top[-2], top[-1], top[0]));
+        x = CAST_CLO(double, double, double, double, double, double, double)(ctx, top[-6], top[-5], top[-4], top[-3], top[-2], top[-1], top[0]);
         top -= 7;
+        PUSH(x);
         break;
         
       default:
