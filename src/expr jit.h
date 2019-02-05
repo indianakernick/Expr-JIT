@@ -11,6 +11,10 @@
 
 #include <stddef.h>
 
+#ifndef EJ_STACK_SIZE
+#define EJ_STACK_SIZE 32
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -23,18 +27,18 @@ enum {
   EJ_CLO0 = EJ_CLO, EJ_CLO1, EJ_CLO2, EJ_CLO3, EJ_CLO4, EJ_CLO5, EJ_CLO6, EJ_CLO7
 };
 
-typedef struct Variable {
+typedef struct ej_variable {
   const char *name;
   double *addr;
   int type;
   void *ctx;
-} Variable;
+} ej_variable;
 
-typedef struct ByteCode ByteCode;
+typedef struct ej_bytecode ej_bytecode;
 
-ByteCode *ej_compile(const char *, Variable *, size_t);
-double ej_eval(ByteCode *);
-void ej_free(ByteCode *);
+ej_bytecode *ej_compile(const char *, ej_variable *, size_t);
+double ej_eval(ej_bytecode *);
+void ej_free(ej_bytecode *);
 
 #ifdef __cplusplus
 }

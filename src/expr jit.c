@@ -43,61 +43,32 @@ enum {
   OP_clo7
 };
 
-struct ByteCode {
+struct ej_bytecode {
   uint64_t *ops;
 };
 
-ByteCode *ej_compile(const char *str, Variable *vars, size_t len) {
+ej_bytecode *ej_compile(const char *str, ej_variable *vars, size_t len) {
   assert(str);
   return NULL;
 }
 
-typedef struct Stack {
-  double *base;
-  double *top;
-  double *roof;
-} Stack;
+#define CAST_FUN(...) ((double(*)(__VA_ARGS__))(++op))
+#define CAST_CLO(...) ((double(*)(void *, __VA_ARGS__))(++op))
+#define CAST_CLO0()   ((double(*)(void *))(++op))
+#define CAST_CTX()    (*(void**)(++op))
 
-static Stack makeStack(const size_t cap) {
-  double *base = malloc(cap);
-  Stack stack = {base, base, base + (cap - 1)};
-  return stack;
-}
+#define PUSH(VAL)                                                               \
+  ++top;                                                                        \
+  assert(top < stack + EJ_STACK_SIZE && "Stack overflow");                      \
+  *top = VAL
+#define POP() *(top--)
 
-static void freeStack(Stack *stack) {
-  assert(stack);
-  free(stack->base);
-}
-
-static void push(Stack *stack, const double val) {
-  assert(stack);
-  if (__builtin_expect(stack->top == stack->roof, 0)) {
-    const ptrdiff_t capacity = stack->roof - stack->base + 1;
-    const ptrdiff_t newCap = capacity * 2;
-    stack->base = realloc(stack->base, newCap);
-    stack->top = stack->base + capacity;
-    stack->roof = stack->base + newCap;
-  }
-  *stack->top = val;
-  ++stack->top;
-}
-
-static double pop(Stack *stack) {
-  assert(stack);
-  const double top = *stack->top;
-  --stack->top;
-  return top;
-}
-
-#define CAST_FUN(...) ((double(*)(__VA_ARGS__))op)
-#define CAST_CLO(...) ((double(*)(void *, __VA_ARGS__))op)
-#define CAST_CLO0()   ((double(*)(void *))op)
-
-double ej_eval(ByteCode *bc) {
+double ej_eval(ej_bytecode *bc) {
   assert(bc);
   assert(bc->ops);
   uint64_t *op = bc->ops;
-  Stack stack = makeStack(32);
+  double stack[EJ_STACK_SIZE];
+  double *top = stack;
   
   double x, y;
   void *ctx;
@@ -105,80 +76,114 @@ double ej_eval(ByteCode *bc) {
   while (1) {
     switch (*op) {
       case OP_neg:
-        *stack.top = -(*stack.top);
+        *top = -(*top);
         break;
       case OP_add:
-        y = *stack.top;
-        x = pop(&stack);
-        *stack.top = x + y;
+        y = POP();
+        x = *top;
+        *top = x + y;
         break;
       case OP_sub:
-        y = *stack.top;
-        x = pop(&stack);
-        *stack.top = x - y;
+        y = POP();
+        x = *top;
+        *top = x - y;
         break;
       case OP_mul:
-        y = *stack.top;
-        x = pop(&stack);
-        *stack.top = x * y;
+        y = POP();
+        x = *top;
+        *top = x * y;
         break;
       case OP_div:
-        y = *stack.top;
-        x = pop(&stack);
-        *stack.top = x / y;
+        y = POP();
+        x = *top;
+        *top = x / y;
         break;
       case OP_mod:
-        y = *stack.top;
-        x = pop(&stack);
-        *stack.top = fmod(x, y);
+        y = POP();
+        x = *top;
+        *top = fmod(x, y);
         break;
       case OP_var:
         ++op;
-        push(&stack, **(double**)op);
+        PUSH(**(double**)op);
         break;
       case OP_con:
         ++op;
-        push(&stack, *(double*)op);
+        PUSH(*(double*)op);
         break;
       case OP_ret:
-        x = pop(&stack);
-        freeStack(&stack);
-        return x;
+        return *top;
       
       case OP_fun0:
-        ++op;
-        push(&stack, CAST_FUN(void)());
+        PUSH(CAST_FUN(void)());
         break;
       case OP_fun1:
-        ++op;
-        push(&stack, CAST_FUN(double)(*stack.top));
-        --stack.top;
+        PUSH(CAST_FUN(double)(*top));
+        --top;
         break;
       case OP_fun2:
-        ++op;
-        push(&stack, CAST_FUN(double, double)(stack.top[-1], stack.top[0]));
-        stack.top -= 2;
+        PUSH(CAST_FUN(double, double)(top[-1], top[0]));
+        top -= 2;
+        break;
+      case OP_fun3:
+        PUSH(CAST_FUN(double, double, double)(top[-2], top[-1], top[0]));
+        top -= 3;
+        break;
+      case OP_fun4:
+        PUSH(CAST_FUN(double, double, double, double)(top[-3], top[-2], top[-1], top[0]));
+        top -= 4;
+        break;
+      case OP_fun5:
+        PUSH(CAST_FUN(double, double, double, double, double)(top[-4], top[-3], top[-2], top[-1], top[0]));
+        top -= 5;
+        break;
+      case OP_fun6:
+        PUSH(CAST_FUN(double, double, double, double, double, double)(top[-5], top[-4], top[-3], top[-2], top[-1], top[0]));
+        top -= 6;
+        break;
+      case OP_fun7:
+        PUSH(CAST_FUN(double, double, double, double, double, double, double)(top[-6], top[-5], top[-4], top[-3], top[-2], top[-1], top[0]));
+        top -= 7;
         break;
       
       case OP_clo0:
-        ++op;
-        ctx = *(void**)op;
-        ++op;
-        push(&stack, CAST_CLO0()(ctx));
+        ctx = CAST_CTX();
+        PUSH(CAST_CLO0()(ctx));
         break;
       case OP_clo1:
-        ++op;
-        ctx = *(void**)op;
-        ++op;
-        push(&stack, CAST_CLO(double)(ctx, *stack.top));
-        --stack.top;
+        ctx = CAST_CTX();
+        PUSH(CAST_CLO(double)(ctx, *top));
+        --top;
         break;
       case OP_clo2:
-        ++op;
-        ctx = *(void**)op;
-        ++op;
-        push(&stack, CAST_CLO(double, double)(ctx, stack.top[-1], stack.top[0]));
-        stack.top -= 2;
+        ctx = CAST_CTX();
+        PUSH(CAST_CLO(double, double)(ctx, top[-1], top[0]));
+        top -= 2;
+        break;
+      case OP_clo3:
+        ctx = CAST_CTX();
+        PUSH(CAST_CLO(double, double, double)(ctx, top[-2], top[-1], top[0]));
+        top -= 3;
+        break;
+      case OP_clo4:
+        ctx = CAST_CTX();
+        PUSH(CAST_CLO(double, double, double, double)(ctx, top[-3], top[-2], top[-1], top[0]));
+        top -= 4;
+        break;
+      case OP_clo5:
+        ctx = CAST_CTX();
+        PUSH(CAST_CLO(double, double, double, double, double)(ctx, top[-4], top[-3], top[-2], top[-1], top[0]));
+        top -= 5;
+        break;
+      case OP_clo6:
+        ctx = CAST_CTX();
+        PUSH(CAST_CLO(double, double, double, double, double, double)(ctx, top[-5], top[-4], top[-3], top[-2], top[-1], top[0]));
+        top -= 6;
+        break;
+      case OP_clo7:
+        ctx = CAST_CTX();
+        PUSH(CAST_CLO(double, double, double, double, double, double, double)(ctx, top[-6], top[-5], top[-4], top[-3], top[-2], top[-1], top[0]));
+        top -= 7;
         break;
         
       default:
@@ -190,7 +195,7 @@ double ej_eval(ByteCode *bc) {
   }
 }
 
-void ej_free(ByteCode *bc) {
+void ej_free(ej_bytecode *bc) {
   if (bc) {
     free(bc->ops);
     free(bc);
