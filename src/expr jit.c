@@ -114,6 +114,7 @@ typedef struct oper {
   int prec;
   int assoc;
   int type;
+  int args;
   const void *addr;
   void *ctx;
 } oper;
@@ -291,6 +292,26 @@ static void pushToOper(ej_bytecode *bc, oper_stack *stack, oper *op) {
   os_push(stack, *op);
 }
 
+static oper *incrementArgs(oper_stack *stack) {
+  assert(stack->size);
+  oper *top = stack->data + (stack->size - 1);
+  assert(top->type == OPER_paren);
+  if (stack->size == 1) return NULL;
+  --top;
+  if (funOrClo(top->type)) {
+    ++top->args;
+    return top;
+  } else {
+    return NULL;
+  }
+}
+
+static char prevChar(const char *str) {
+  --str;
+  while (isspace(*str)) --str;
+  return *str;
+}
+
 ej_bytecode *ej_compile(const char *str, ej_variable *vars, size_t len) {
   assert(str);
   assert(vars ? len != 0 : len == 0);
@@ -318,6 +339,7 @@ ej_bytecode *ej_compile(const char *str, ej_variable *vars, size_t len) {
         op.prec = 0;
         op.assoc = 0;
         op.type = var->type;
+        op.args = 0;
         op.addr = var->addr;
         op.ctx = var->ctx;
         os_push(&stack, op);
@@ -344,13 +366,21 @@ ej_bytecode *ej_compile(const char *str, ej_variable *vars, size_t len) {
     if (*str == ',') {
       ++str;
       pushOutputUntilParen(bc, &stack);
+      incrementArgs(&stack);
       prefixContext = true;
       continue;
     }
     
     if (*str == ')') {
+      const char prev = prevChar(str);
       ++str;
       pushOutputUntilParen(bc, &stack);
+      if (prev != '(') {
+        oper *fun = incrementArgs(&stack);
+        if (fun) {
+          assert(fun->args == ARITY(fun->type) && "Wrong number of arguments");
+        }
+      }
       os_pop(&stack);
       prefixContext = false;
       continue;
