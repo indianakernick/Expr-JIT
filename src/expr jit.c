@@ -9,6 +9,9 @@
 #include "expr jit.h"
 
 #include <math.h>
+#include <ctype.h>
+#include <stdio.h>
+#include <string.h>
 #include <assert.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -57,27 +60,21 @@ static ej_bytecode *bc_alloc(const size_t cap) {
   return bc;
 }
 
-static void bc_reserve(ej_bytecode *bc, const size_t cap) {
-  assert(bc);
-  size_t newCap = bc->capacity;
-  while (newCap < cap) {
-    newCap *= 2;
-  }
-  if (newCap != bc->capacity) {
-    bc->capacity = newCap;
-    bc->ops = realloc(bc->ops, newCap);
-  }
-}
-
 static void bc_push_op(ej_bytecode *bc, const uint64_t op) {
   assert(bc);
-  const size_t newSize = bc->size + 1;
-  bc_reserve(bc, newSize);
-  bc->ops[bc->size] = op;
+  const size_t size = bc->size;
+  const size_t capacity = bc->capacity;
+  if (size == capacity) {
+    const size_t newCapacity = capacity * 2;
+    bc->capacity = newCapacity;
+    bc->ops = realloc(bc->ops, newCapacity);
+  }
+  const size_t newSize = size + 1;
+  bc->ops[size] = op;
   bc->size = newSize;
 }
 
-static void bc_push_var(ej_bytecode *bc, double *var) {
+static void bc_push_var(ej_bytecode *bc, const double *var) {
   bc_push_op(bc, OP_var);
   bc_push_op(bc, *(uint64_t*)(&var));
 }
@@ -87,71 +84,267 @@ static void bc_push_con(ej_bytecode *bc, double con) {
   bc_push_op(bc, *(uint64_t*)(&con));
 }
 
-static void bc_push_fun(ej_bytecode *bc, void *addr, size_t arity) {
+static void bc_push_fun(ej_bytecode *bc, const void *addr, size_t arity) {
   assert(arity < 8);
   bc_push_op(bc, OP_fun0 + arity);
   bc_push_op(bc, *(uint64_t*)(&addr));
 }
 
-static void bc_push_clo(ej_bytecode *bc, void *addr, size_t arity, void *ctx) {
+static void bc_push_clo(ej_bytecode *bc, const void *addr, size_t arity, void *ctx) {
   assert(arity < 8);
   bc_push_op(bc, OP_clo0 + arity);
   bc_push_op(bc, *(uint64_t*)(&ctx));
   bc_push_op(bc, *(uint64_t*)(&addr));
 }
 
-static double calc(double a, double b) {
-  return a / (b + a);
+enum {
+  OPER_inflix,
+  OPER_prefix,
+  OPER_paren
+};
+
+enum {
+  ASSOC_left,
+  ASSOC_right
+};
+
+typedef struct oper {
+  const char *name;
+  int prec;
+  int assoc;
+  int type;
+  const void *addr;
+  void *ctx;
+} oper;
+
+
+static oper prec_table[] = {
+  {"u-", 4, ASSOC_right, OPER_prefix},
+  {"^", 3, ASSOC_right, OPER_inflix},
+  {"%", 2, ASSOC_left, OPER_inflix},
+  {"/", 2, ASSOC_left, OPER_inflix},
+  {"*", 2, ASSOC_left, OPER_inflix},
+  {"-", 1, ASSOC_left, OPER_inflix},
+  {"+", 1, ASSOC_left, OPER_inflix},
+};
+
+static const double constant_e = 2.71828182845904523536;
+static const double constant_pi = 3.14159265358979323846;
+
+static ej_variable builtins[] = {
+  {"abs", fabs, EJ_FUN1, NULL},
+  {"sqrt", sqrt, EJ_FUN1, NULL},
+  {"e", &constant_e, EJ_VAR, NULL},
+  {"pi", &constant_pi, EJ_VAR, NULL}
+};
+
+typedef struct oper_stack {
+  oper *data;
+  size_t size;
+  size_t capacity;
+} oper_stack;
+
+static oper_stack os_alloc(const size_t cap) {
+  oper_stack stack = {malloc(cap * sizeof(oper)), 0, cap};
+  return stack;
 }
 
-static double calc_clo(double *ctx, double a) {
-  return a / (*ctx + a);
+static void os_free(oper_stack *stack) {
+  assert(stack);
+  free(stack->data);
+}
+
+static oper *os_top(oper_stack *stack) {
+  assert(stack);
+  assert(stack->size);
+  return stack->data + (stack->size - 1);
+}
+
+static void os_pop(oper_stack *stack) {
+  assert(stack);
+  assert(stack->size);
+  stack->size--;
+}
+
+static void os_push(oper_stack *stack, oper op) {
+  assert(stack);
+  const size_t size = stack->size;
+  const size_t capacity = stack->capacity;
+  if (size == capacity) {
+    const size_t newCapacity = capacity * 2;
+    stack->capacity = newCapacity;
+    stack->data = realloc(stack->data, newCapacity);
+  }
+  const size_t newSize = size + 1;
+  stack->data[size] = op;
+  stack->size = newSize;
+}
+
+static ej_variable *findVar(ej_variable *vars, size_t len, const char *ident, size_t identSize) {
+  for (; len != 0; --len, ++vars) {
+    if (strncmp(vars->name, ident, identSize) == 0) {
+      return vars;
+    }
+  }
+  return NULL;
+}
+
+static ej_variable *findBuiltin(const char *ident, size_t identSize) {
+  return findVar(builtins, sizeof(builtins) / sizeof(builtins[0]), ident, identSize);
+}
+
+static oper *findOper(const char op) {
+  oper *row = prec_table;
+  size_t size = sizeof(prec_table) / sizeof(prec_table[0]);
+  for (; size != 0; --size, ++row) {
+    if (row->name[0] == op && row->name[1] == 0 && row->type == OPER_inflix) {
+      return row;
+    }
+  }
+  return NULL;
+}
+
+static bool funOrClo(const int type) {
+  return (type & EJ_FUN) == EJ_FUN || (type & EJ_CLO) == EJ_CLO;
+}
+
+static bool shouldPop(oper *top, oper *other) {
+  if (top->type == OPER_paren) return false;
+  if ((top->type & EJ_FUN) == EJ_FUN) return true;
+  if ((top->type & EJ_CLO) == EJ_CLO) return true;
+  if (top->prec > other->prec) return true;
+  if (top->prec == other->prec && top->assoc == ASSOC_left) return true;
+  return false;
+}
+
+static void pushOp(ej_bytecode *bc, oper *op) {
+  if (op->type == OPER_inflix) {
+    if (op->name[0] == '+') {
+      bc_push_op(bc, OP_add);
+    } else if (op->name[0] == '-') {
+      bc_push_op(bc, OP_sub);
+    } else if (op->name[0] == '*') {
+      bc_push_op(bc, OP_mul);
+    } else if (op->name[0] == '/') {
+      bc_push_op(bc, OP_div);
+    } else if (op->name[0] == '%') {
+      bc_push_fun(bc, fmod, 2);
+    } else if (op->name[0] == '^') {
+      bc_push_fun(bc, pow, 2);
+    } else {
+      assert(false);
+    }
+  } else if (op->type == OPER_prefix) {
+    if (op->name[0] == 'u' && op->name[1] == '-') {
+      bc_push_op(bc, OP_neg);
+    } else {
+      assert(false);
+    }
+  } else if ((op->type & EJ_FUN) == EJ_FUN) {
+    bc_push_fun(bc, op->addr, op->type & 7);
+  } else if ((op->type & EJ_CLO) == EJ_CLO) {
+    bc_push_clo(bc, op->addr, op->type & 7, op->ctx);
+  } else {
+    assert(false);
+  }
 }
 
 ej_bytecode *ej_compile(const char *str, ej_variable *vars, size_t len) {
+  assert(str);
+  assert(vars ? len != 0 : len == 0);
+  
   ej_bytecode *bc = bc_alloc(64);
+  oper_stack stack = os_alloc(16);
   
-  // ( 1/(a+1) + 2/(a+2) + 3/(a+3) )
+  while (*str) {
+    while (isspace(*str)) ++str;
+    
+    if (isalpha(*str)) {
+      const char *begin = str++;
+      while (isalnum(*str)) ++str;
+      ej_variable *var = findVar(vars, len, begin, str - begin);
+      if (!var) {
+        var = findBuiltin(begin, str - begin);
+      }
+      assert(var && "Failed to lookup identifier");
+      while (isspace(*str)) ++str;
+      if (*str == '(') {
+        assert(funOrClo(var->type) && "Calling a variable");
+        oper op;
+        op.name = var->name;
+        op.prec = 0;
+        op.assoc = 0;
+        op.type = var->type;
+        op.addr = var->addr;
+        op.ctx = var->ctx;
+        os_push(&stack, op);
+      } else {
+        assert(var->type == EJ_VAR && "Taking the value of a function");
+        bc_push_var(bc, var->addr);
+      }
+      continue;
+    }
+    
+    if (*str == '(') {
+      ++str;
+      oper op;
+      op.name = "(";
+      op.prec = 0;
+      op.assoc = 0;
+      op.type = OPER_paren;
+      os_push(&stack, op);
+      continue;
+    }
+    
+    if (*str == ')') {
+      ++str;
+      assert(stack.size && "Unmatching parentheses");
+      oper *top = os_top(&stack);
+      while (top->type != OPER_paren) {
+        pushOp(bc, top);
+        os_pop(&stack);
+        assert(stack.size && "Unmatching parentheses");
+        top = os_top(&stack);
+      }
+      os_pop(&stack);
+      continue;
+    }
+    
+    oper *op = findOper(*str);
+    if (op) {
+      ++str;
+      if (stack.size) {
+        oper *top = os_top(&stack);
+        while (shouldPop(top, op)) {
+          pushOp(bc, top);
+          os_pop(&stack);
+          top = os_top(&stack);
+        }
+      }
+      os_push(&stack, *op);
+      continue;
+    }
+    
+    char *end;
+    double number = strtod(str, &end);
+    if (end != str) {
+      str = end;
+      bc_push_con(bc, number);
+      continue;
+    }
+    
+    assert(false);
+  }
   
-  bc_push_con(bc, 1);
-  bc_push_var(bc, (double*)vars[0].addr);
-  bc_push_fun(bc, &calc, 2);
+  while (stack.size) {
+    oper *top = os_top(&stack);
+    assert(top->type != OPER_paren && "Unmatching parentheses");
+    pushOp(bc, top);
+    os_pop(&stack);
+  }
   
-  bc_push_con(bc, 2);
-  bc_push_clo(bc, &calc_clo, 1, vars[0].addr);
-  
-  bc_push_op(bc, OP_add);
-  
-  bc_push_con(bc, 3);
-  bc_push_var(bc, (double*)vars[0].addr);
-  bc_push_fun(bc, &calc, 2);
-  
-  bc_push_op(bc, OP_add);
   bc_push_op(bc, OP_ret);
-  
-  /*bc_push_con(bc, 1);
-  bc_push_var(bc, (double*)vars[0].addr);
-  bc_push_con(bc, 1);
-  bc_push_op(bc, OP_add);
-  bc_push_op(bc, OP_div);
-  
-  bc_push_con(bc, 2);
-  bc_push_var(bc, (double*)vars[0].addr);
-  bc_push_con(bc, 2);
-  bc_push_op(bc, OP_add);
-  bc_push_op(bc, OP_div);
-  
-  bc_push_op(bc, OP_add);
-  
-  bc_push_con(bc, 3);
-  bc_push_var(bc, (double*)vars[0].addr);
-  bc_push_con(bc, 3);
-  bc_push_op(bc, OP_add);
-  bc_push_op(bc, OP_div);
-  
-  bc_push_op(bc, OP_add);
-  bc_push_op(bc, OP_ret);*/
-  
+  os_free(&stack);
   return bc;
 }
 
@@ -311,5 +504,46 @@ void ej_free(ej_bytecode *bc) {
   if (bc) {
     free(bc->ops);
     free(bc);
+  }
+}
+
+void ej_print(ej_bytecode *bc) {
+  assert(bc);
+  
+  uint64_t *op = bc->ops;
+  while (1) {
+    switch (*op) {
+      case OP_neg:
+        puts("neg");
+        break;
+      case OP_add:
+        puts("add");
+        break;
+      case OP_sub:
+        puts("sub");
+        break;
+      case OP_mul:
+        puts("mul");
+        break;
+      case OP_div:
+        puts("div");
+        break;
+      case OP_var:
+        ++op;
+        printf("var %p\n", *(void**)op);
+        break;
+      case OP_con:
+        ++op;
+        printf("con %f\n", *(double*)op);
+        break;
+      case OP_ret:
+        puts("ret");
+        return;
+      
+      default:
+        puts("(garbage)");
+        return;
+    }
+    ++op;
   }
 }

@@ -29,7 +29,7 @@ enum {
 
 typedef struct ej_variable {
   const char *name;
-  void *addr;
+  const void *addr;
   int type;
   void *ctx;
 } ej_variable;
@@ -39,6 +39,7 @@ typedef struct ej_bytecode ej_bytecode;
 ej_bytecode *ej_compile(const char *, ej_variable *, size_t);
 double ej_eval(ej_bytecode *);
 void ej_free(ej_bytecode *);
+void ej_print(ej_bytecode *);
 
 #ifdef __cplusplus
 }
