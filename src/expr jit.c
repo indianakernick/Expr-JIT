@@ -133,10 +133,26 @@ static const double constant_e = 2.71828182845904523536;
 static const double constant_pi = 3.14159265358979323846;
 
 static ej_variable builtins[] = {
-  {"abs", fabs, EJ_FUN1, NULL},
-  {"sqrt", sqrt, EJ_FUN1, NULL},
-  {"e", &constant_e, EJ_VAR, NULL},
-  {"pi", &constant_pi, EJ_VAR, NULL}
+  {"abs", fabs,        EJ_FUN1, 0},
+  {"acos", acos,       EJ_FUN1, 0},
+  {"asin", asin,       EJ_FUN1, 0},
+  {"atan", atan,       EJ_FUN1, 0},
+  {"atan2", atan2,     EJ_FUN2, 0},
+  {"ceil", ceil,       EJ_FUN1, 0},
+  {"cos", cos,         EJ_FUN1, 0},
+  {"cosh", cosh,       EJ_FUN1, 0},
+  {"e", &constant_e,   EJ_VAR, 0},
+  {"exp", exp,         EJ_FUN1, 0},
+  {"floor", floor,     EJ_FUN1, 0},
+  {"ln", log,          EJ_FUN1, 0},
+  {"log", log,         EJ_FUN1, 0},
+  {"log10", log10,     EJ_FUN1, 0},
+  {"pi", &constant_pi, EJ_VAR, 0},
+  {"sin", sin,         EJ_FUN1, 0},
+  {"sinh", sinh,       EJ_FUN1, 0},
+  {"sqrt", sqrt,       EJ_FUN1, 0},
+  {"tan", tan,         EJ_FUN1, 0},
+  {"tanh", tanh,       EJ_FUN1, 0},
 };
 
 typedef struct oper_stack {
