@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <inttypes.h>
 
 enum {
   OP_neg = 0,
@@ -27,7 +28,7 @@ enum {
   OP_con,
   OP_ret,
   
-  OP_fun0,
+  OP_fun0 = 8,
   OP_fun1,
   OP_fun2,
   OP_fun3,
@@ -36,7 +37,7 @@ enum {
   OP_fun6,
   OP_fun7,
   
-  OP_clo0,
+  OP_clo0 = 16,
   OP_clo1,
   OP_clo2,
   OP_clo3,
@@ -119,7 +120,7 @@ typedef struct oper {
 
 
 static oper prec_table[] = {
-  {"u-", 4, ASSOC_right, OPER_prefix},
+  {"-", 4, ASSOC_right, OPER_prefix},
   {"^", 3, ASSOC_right, OPER_inflix},
   {"%", 2, ASSOC_left, OPER_inflix},
   {"/", 2, ASSOC_left, OPER_inflix},
@@ -193,11 +194,11 @@ static ej_variable *findBuiltin(const char *ident, size_t identSize) {
   return findVar(builtins, sizeof(builtins) / sizeof(builtins[0]), ident, identSize);
 }
 
-static oper *findOper(const char op) {
+static oper *findOper(const char op, int type) {
   oper *row = prec_table;
   size_t size = sizeof(prec_table) / sizeof(prec_table[0]);
   for (; size != 0; --size, ++row) {
-    if (row->name[0] == op && row->name[1] == 0 && row->type == OPER_inflix) {
+    if (row->name[0] == op && row->name[1] == 0 && row->type == type) {
       return row;
     }
   }
@@ -217,7 +218,9 @@ static bool shouldPop(oper *top, oper *other) {
   return false;
 }
 
-static void pushOp(ej_bytecode *bc, oper *op) {
+#define ARITY(TYPE) ((TYPE) & 7)
+
+static void pushToOutput(ej_bytecode *bc, oper *op) {
   if (op->type == OPER_inflix) {
     if (op->name[0] == '+') {
       bc_push_op(bc, OP_add);
@@ -235,18 +238,41 @@ static void pushOp(ej_bytecode *bc, oper *op) {
       assert(false);
     }
   } else if (op->type == OPER_prefix) {
-    if (op->name[0] == 'u' && op->name[1] == '-') {
+    if (op->name[0] == '-') {
       bc_push_op(bc, OP_neg);
     } else {
       assert(false);
     }
   } else if ((op->type & EJ_FUN) == EJ_FUN) {
-    bc_push_fun(bc, op->addr, op->type & 7);
+    bc_push_fun(bc, op->addr, ARITY(op->type));
   } else if ((op->type & EJ_CLO) == EJ_CLO) {
-    bc_push_clo(bc, op->addr, op->type & 7, op->ctx);
+    bc_push_clo(bc, op->addr, ARITY(op->type), op->ctx);
   } else {
     assert(false);
   }
+}
+
+static void pushOutputUntilParen(ej_bytecode *bc, oper_stack *stack) {
+  assert(stack->size && "Unmatching parentheses");
+  oper *top = os_top(stack);
+  while (top->type != OPER_paren) {
+    pushToOutput(bc, top);
+    os_pop(stack);
+    assert(stack->size && "Unmatching parentheses");
+    top = os_top(stack);
+  }
+}
+
+static void pushToOper(ej_bytecode *bc, oper_stack *stack, oper *op) {
+  if (stack->size) {
+    oper *top = os_top(stack);
+    while (shouldPop(top, op)) {
+      pushToOutput(bc, top);
+      os_pop(stack);
+      top = os_top(stack);
+    }
+  }
+  os_push(stack, *op);
 }
 
 ej_bytecode *ej_compile(const char *str, ej_variable *vars, size_t len) {
@@ -255,6 +281,7 @@ ej_bytecode *ej_compile(const char *str, ej_variable *vars, size_t len) {
   
   ej_bytecode *bc = bc_alloc(64);
   oper_stack stack = os_alloc(16);
+  bool prefixContext = true;
   
   while (*str) {
     while (isspace(*str)) ++str;
@@ -281,6 +308,7 @@ ej_bytecode *ej_compile(const char *str, ej_variable *vars, size_t len) {
       } else {
         assert(var->type == EJ_VAR && "Taking the value of a function");
         bc_push_var(bc, var->addr);
+        prefixContext = false;
       }
       continue;
     }
@@ -293,35 +321,40 @@ ej_bytecode *ej_compile(const char *str, ej_variable *vars, size_t len) {
       op.assoc = 0;
       op.type = OPER_paren;
       os_push(&stack, op);
+      prefixContext = true;
+      continue;
+    }
+    
+    if (*str == ',') {
+      ++str;
+      pushOutputUntilParen(bc, &stack);
+      prefixContext = true;
       continue;
     }
     
     if (*str == ')') {
       ++str;
-      assert(stack.size && "Unmatching parentheses");
-      oper *top = os_top(&stack);
-      while (top->type != OPER_paren) {
-        pushOp(bc, top);
-        os_pop(&stack);
-        assert(stack.size && "Unmatching parentheses");
-        top = os_top(&stack);
-      }
+      pushOutputUntilParen(bc, &stack);
       os_pop(&stack);
+      prefixContext = false;
       continue;
     }
     
-    oper *op = findOper(*str);
-    if (op) {
-      ++str;
-      if (stack.size) {
-        oper *top = os_top(&stack);
-        while (shouldPop(top, op)) {
-          pushOp(bc, top);
-          os_pop(&stack);
-          top = os_top(&stack);
-        }
+    if (prefixContext) {
+      oper *op = findOper(*str, OPER_prefix);
+      if (op) {
+        str += strlen(op->name);
+        pushToOper(bc, &stack, op);
+        prefixContext = true;
+        continue;
       }
-      os_push(&stack, *op);
+    }
+    
+    oper *op = findOper(*str, OPER_inflix);
+    if (op) {
+      str += strlen(op->name);
+      pushToOper(bc, &stack, op);
+      prefixContext = false;
       continue;
     }
     
@@ -330,6 +363,7 @@ ej_bytecode *ej_compile(const char *str, ej_variable *vars, size_t len) {
     if (end != str) {
       str = end;
       bc_push_con(bc, number);
+      prefixContext = false;
       continue;
     }
     
@@ -339,7 +373,7 @@ ej_bytecode *ej_compile(const char *str, ej_variable *vars, size_t len) {
   while (stack.size) {
     oper *top = os_top(&stack);
     assert(top->type != OPER_paren && "Unmatching parentheses");
-    pushOp(bc, top);
+    pushToOutput(bc, top);
     os_pop(&stack);
   }
   
@@ -534,11 +568,28 @@ void ej_print(ej_bytecode *bc) {
         break;
       case OP_con:
         ++op;
-        printf("con %f\n", *(double*)op);
+        printf("con %g\n", *(double*)op);
         break;
       case OP_ret:
         puts("ret");
         return;
+      
+      case OP_fun0: case OP_fun1: case OP_fun2: case OP_fun3:
+      case OP_fun4: case OP_fun5: case OP_fun6: case OP_fun7: {
+        const uint64_t arity = ARITY(*op);
+        void *fun = *(void**)(++op);
+        printf("fun %" PRIu64 " %p\n", arity, fun);
+        break;
+      }
+      
+      case OP_clo0: case OP_clo1: case OP_clo2: case OP_clo3:
+      case OP_clo4: case OP_clo5: case OP_clo6: case OP_clo7: {
+        const uint64_t arity = ARITY(*op);
+        void *ctx = *(void**)(++op);
+        void *fun = *(void**)(++op);
+        printf("clo %" PRIu64 " %p ctx %p\n", arity, fun, ctx);
+        break;
+      }
       
       default:
         puts("(garbage)");
@@ -546,4 +597,14 @@ void ej_print(ej_bytecode *bc) {
     }
     ++op;
   }
+}
+
+double ej_interp(const char *str) {
+  ej_bytecode *bc = ej_compile(str, NULL, 0);
+  if (!bc) {
+    return NAN;
+  }
+  const double result = ej_eval(bc);
+  ej_free(bc);
+  return result;
 }
