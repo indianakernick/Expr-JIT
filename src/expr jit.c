@@ -414,6 +414,7 @@ ej_bytecode *ej_compile(const char *str, ej_variable *vars, size_t len) {
     }
     
     assert(false);
+    __builtin_unreachable();
   }
   
   while (stack.size) {
@@ -589,6 +590,7 @@ void ej_free(ej_bytecode *bc) {
 
 void ej_print(ej_bytecode *bc) {
   assert(bc);
+  assert(bc->ops);
   
   uint64_t *op = bc->ops;
   while (1) {
